@@ -1,0 +1,1 @@
+worker: python italian_ai_bot.py
