@@ -118,4 +118,7 @@ def main():
     updater.idle()
 
 if __name__ == '__main__':
-    main()
+    def main():
+    TOKEN = os.getenv("TELEGRAM_TOKEN") or "YOUR_TOKEN_HERE"
+    print(f"Using Telegram token: {TOKEN}")  # Add this line
+    application = Application.builder().token(TOKEN).build()
