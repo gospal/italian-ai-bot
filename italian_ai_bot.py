@@ -1,214 +1,119 @@
 import telegram
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, ConversationHandler
 import random
-import openai
-import os
-import json
-from datetime import datetime
-import assemblyai as aai
-from gtts import gTTS
-import io
-
-# API setup
-openai.api_key = os.getenv("OPENAI_API_KEY") or "YOUR_OPENAI_API_KEY"
-aai.settings.api_key = os.getenv("ASSEMBLYAI_API_KEY") or "YOUR_ASSEMBLYAI_API_KEY"
 
 # States for conversation handler
-PHRASE, QUIZ, ANSWER, CHAT, FEEDBACK = range(5)
+PHRASE, QUIZ, ANSWER = range(3)
 
-# Italian phrases with difficulty levels
+# Italian phrases dictionary
 italian_phrases = {
-    "basic": {"Hello": "Ciao", "Goodbye": "Arrivederci", "Thank you": "Grazie", "Please": "Per favore"},
-    "intermediate": {"How are you?": "Come stai?", "I'm good": "Sto bene"},
-    "advanced": {"What is your name?": "Come ti chiami?", "My name is": "Mi chiamo"}
+    "Hello": "Ciao",
+    "Goodbye": "Arrivederci",
+    "Thank you": "Grazie",
+    "Please": "Per favore",
+    "How are you?": "Come stai?",
+    "I'm good": "Sto bene",
+    "What is your name?": "Come ti chiami?",
+    "My name is": "Mi chiamo"
 }
 
-# Quiz questions with difficulty
-quiz_questions = {
-    "basic": [{"question": "How do you say 'Hello' in Italian?", "answer": "Ciao"}],
-    "intermediate": [{"question": "What does 'Grazie' mean?", "answer": "Thank you"}],
-    "advanced": [{"question": "Translate 'I’m going to the store' to Italian", "answer": "Vado al negozio"}]
-}
-
-# User data storage
-user_progress = {}
+# Quiz questions
+quiz_questions = [
+    {"question": "How do you say 'Hello' in Italian?", "answer": "Ciao"},
+    {"question": "What does 'Grazie' mean?", "answer": "Thank you"},
+    {"question": "How do you say 'Please' in Italian?", "answer": "Per favore"},
+]
 
 def start(update, context):
+    """Start command handler"""
     user = update.message.from_user.first_name
-    user_id = update.message.from_user.id
-    if user_id not in user_progress:
-        user_progress[user_id] = {"level": "basic", "score": 0, "last_interaction": str(datetime.now())}
-
     welcome_message = (
-        f"Ciao {user}! 🇮🇹 Welcome to your advanced Italian learning bot!\n"
-        f"Your current level: {user_progress[user_id]['level']}\n\n"
-        "Commands:\n"
-        "/phrases - Learn phrases by level\n"
-        "/quiz - Adaptive quizzes\n"
-        "/chat - AI conversation (text or voice)\n"
-        "/progress - Check your stats\n"
-        "/cancel - Stop activity"
+        f"Ciao {user}! 🇮🇹 Welcome to your Italian conversation learning bot!\n\n"
+        "Commands available:\n"
+        "/phrases - Learn common Italian phrases\n"
+        "/quiz - Test your Italian knowledge\n"
+        "/cancel - Stop current activity"
     )
     update.message.reply_text(welcome_message)
     return None
 
 def phrases(update, context):
-    user_id = update.message.from_user.id
-    level = user_progress.get(user_id, {"level": "basic"})["level"]
-    update.message.reply_text(f"Here are {level} Italian phrases:")
-    phrase_list = "\n".join([f"{eng} - {ita}" for eng, ita in italian_phrases[level].items()])
+    """Show Italian phrases"""
+    update.message.reply_text("Here are some common Italian phrases to learn:")
+    phrase_list = "\n".join([f"{eng} - {ita}" for eng, ita in italian_phrases.items()])
     update.message.reply_text(phrase_list)
-    update.message.reply_text("Type or say an English phrase from the list!")
+    update.message.reply_text("Type any English phrase from the list to hear it in Italian!")
     return PHRASE
 
 def handle_phrase(update, context):
-    user_id = update.message.from_user.id
-    level = user_progress[user_id]["level"]
-    user_input = update.message.text.strip() if update.message.text else transcribe_voice(update.message.voice)
-
-    if user_input in italian_phrases[level]:
-        response = f"In Italian: {italian_phrases[level][user_input]}"
-        send_voice_response(update, context, response)
+    """Handle user's phrase input"""
+    user_input = update.message.text.strip()
+    if user_input in italian_phrases:
+        update.message.reply_text(f"In Italian, '{user_input}' is: {italian_phrases[user_input]}")
     else:
-        update.message.reply_text("Not found in your level’s list. Try again!")
+        update.message.reply_text("Sorry, I don't have that phrase. Try one from the list!")
     return PHRASE
 
 def quiz(update, context):
-    user_id = update.message.from_user.id
-    level = user_progress[user_id]["level"]
-    question = random.choice(quiz_questions[level])
+    """Start a quiz"""
+    question = random.choice(quiz_questions)
     context.user_data['current_answer'] = question['answer']
-    context.user_data['current_question'] = question['question']
-    update.message.reply_text(f"Quiz ({level}): {question['question']} (Reply with text or voice)")
+    update.message.reply_text(f"Quiz time! {question['question']}")
     return QUIZ
 
 def handle_quiz_answer(update, context):
-    user_id = update.message.from_user.id
-    user_answer = update.message.text.strip().lower() if update.message.text else transcribe_voice(update.message.voice).lower()
+    """Check quiz answer"""
+    user_answer = update.message.text.strip().lower()
     correct_answer = context.user_data['current_answer'].lower()
-
+    
     if user_answer == correct_answer:
-        user_progress[user_id]["score"] += 10
-        update_level(user_id)
-        response = f"Correct! Score: {user_progress[user_id]['score']}. Another? (yes/no)"
-        send_voice_response(update, context, response)
+        update.message.reply_text("Correct! Ben fatto! 🎉 Want another? (yes/no)")
+        return ANSWER
     else:
-        response = f"Wrong. It’s '{correct_answer}'. Try again? (yes/no)"
-        send_voice_response(update, context, response)
-    return ANSWER
-
-def update_level(user_id):
-    score = user_progress[user_id]["score"]
-    if score >= 50 and user_progress[user_id]["level"] == "basic":
-        user_progress[user_id]["level"] = "intermediate"
-    elif score >= 100 and user_progress[user_id]["level"] == "intermediate":
-        user_progress[user_id]["level"] = "advanced"
+        update.message.reply_text(f"Sorry, that's wrong. The correct answer is '{correct_answer}'. Try again? (yes/no)")
+        return ANSWER
 
 def quiz_continue(update, context):
-    response = update.message.text.lower() if update.message.text else transcribe_voice(update.message.voice).lower()
+    """Handle quiz continuation"""
+    response = update.message.text.lower()
     if response == 'yes':
         return quiz(update, context)
-    update.message.reply_text("Quiz ended. Try /chat or /phrases!")
-    return ConversationHandler.END
-
-def chat(update, context):
-    user_id = update.message.from_user.id
-    level = user_progress[user_id]["level"]
-    update.message.reply_text(
-        f"Practice Italian at your {level} level! Use text or voice, "
-        "and I’ll respond in Italian with feedback. Say 'stop' to end."
-    )
-    return CHAT
-
-def handle_chat(update, context):
-    user_id = update.message.from_user.id
-    user_input = update.message.text.strip().lower() if update.message.text else transcribe_voice(update.message.voice).lower()
-
-    if user_input == "stop":
-        update.message.reply_text("Chat ended. Check /progress or start again!")
+    else:
+        update.message.reply_text("Thanks for practicing! Use /phrases or /quiz to continue learning.")
         return ConversationHandler.END
 
-    level = user_progress[user_id]["level"]
-    prompt = (
-        f"You are an Italian tutor. The user is at {level} level. "
-        f"Respond in Italian to their input, matching their level. "
-        f"If they use English, translate to Italian first, then respond. "
-        f"Provide brief feedback on grammar or pronunciation if applicable. Input: '{user_input}'"
-    )
-
-    try:
-        response = openai.Completion.create(
-            engine="text-davinci-003",
-            prompt=prompt,
-            max_tokens=150,
-            temperature=0.8
-        )
-        ai_response = response.choices[0].text.strip()
-        send_voice_response(update, context, ai_response)
-        user_progress[user_id]["last_interaction"] = str(datetime.now())
-    except Exception as e:
-        update.message.reply_text(f"Errore: {str(e)}. Riprova!")
-
-    return CHAT
-
-def progress(update, context):
-    user_id = update.message.from_user.id
-    stats = user_progress.get(user_id, {"level": "basic", "score": 0, "last_interaction": "N/A"})
-    update.message.reply_text(
-        f"Your Progress:\nLevel: {stats['level']}\nScore: {stats['score']}\nLast Interaction: {stats['last_interaction']}"
-    )
-    return None
-
-def transcribe_voice(voice):
-    """Convert voice message to text using AssemblyAI"""
-    config = aai.TranscriptionConfig(language_code="en-US")  # Use "it-IT" for Italian if spoken
-    transcriber = aai.Transcriber()
-    audio_file = voice.get_file().download_as_bytearray()
-    with open("temp_audio.ogg", "wb") as f:
-        f.write(audio_file)
-    transcript = transcriber.transcribe("temp_audio.ogg", config=config)
-    return transcript.text if transcript.text else "Sorry, I couldn’t understand."
-
-def send_voice_response(update, context, text):
-    """Send a voice message using gTTS"""
-    tts = gTTS(text=text, lang="it")
-    audio_file = io.BytesIO()
-    tts.write_to_fp(audio_file)
-    audio_file.seek(0)
-    context.bot.send_voice(chat_id=update.effective_chat.id, voice=audio_file)
-
 def cancel(update, context):
-    update.message.reply_text("Activity cancelled. Back to /start!")
+    """Cancel current conversation"""
+    update.message.reply_text("Activity cancelled. Use /start to begin again!")
     return ConversationHandler.END
 
 def main():
-    TOKEN = os.getenv("TELEGRAM_TOKEN") or "YOUR_TOKEN_HERE"
+    """Main function to run the bot"""
+    # Replace 'YOUR_TOKEN_HERE' with your actual Telegram Bot Token
+    TOKEN = 'YOUR_TOKEN_HERE'
+    
     updater = Updater(TOKEN, use_context=True)
     dp = updater.dispatcher
 
+    # Conversation handler
     conv_handler = ConversationHandler(
         entry_points=[
             CommandHandler('phrases', phrases),
-            CommandHandler('quiz', quiz),
-            CommandHandler('chat', chat)
+            CommandHandler('quiz', quiz)
         ],
         states={
-            PHRASE: [MessageHandler(Filters.text & ~Filters.command, handle_phrase),
-                     MessageHandler(Filters.voice, handle_phrase)],
-            QUIZ: [MessageHandler(Filters.text & ~Filters.command, handle_quiz_answer),
-                   MessageHandler(Filters.voice, handle_quiz_answer)],
-            ANSWER: [MessageHandler(Filters.text & ~Filters.command, quiz_continue),
-                     MessageHandler(Filters.voice, quiz_continue)],
-            CHAT: [MessageHandler(Filters.text & ~Filters.command, handle_chat),
-                   MessageHandler(Filters.voice, handle_chat)],
+            PHRASE: [MessageHandler(Filters.text & ~Filters.command, handle_phrase)],
+            QUIZ: [MessageHandler(Filters.text & ~Filters.command, handle_quiz_answer)],
+            ANSWER: [MessageHandler(Filters.text & ~Filters.command, quiz_continue)],
         },
         fallbacks=[CommandHandler('cancel', cancel)]
     )
 
+    # Add handlers
     dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("progress", progress))
     dp.add_handler(conv_handler)
 
+    # Start the bot
     updater.start_polling()
     updater.idle()
 
