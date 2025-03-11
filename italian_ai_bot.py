@@ -1,6 +1,12 @@
+import os
+import random
 import telegram
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, ConversationHandler
-import random
+
+# Load Telegram token from environment variable
+TOKEN = os.getenv("TELEGRAM_TOKEN")
+if not TOKEN:
+    raise ValueError("Error: TELEGRAM_TOKEN is not set. Please configure it in your environment variables.")
 
 # States for conversation handler
 PHRASE, QUIZ, ANSWER = range(3)
@@ -35,23 +41,19 @@ def start(update, context):
         "/cancel - Stop current activity"
     )
     update.message.reply_text(welcome_message)
-    return None
 
 def phrases(update, context):
     """Show Italian phrases"""
-    update.message.reply_text("Here are some common Italian phrases to learn:")
     phrase_list = "\n".join([f"{eng} - {ita}" for eng, ita in italian_phrases.items()])
-    update.message.reply_text(phrase_list)
+    update.message.reply_text("Here are some common Italian phrases to learn:\n" + phrase_list)
     update.message.reply_text("Type any English phrase from the list to hear it in Italian!")
     return PHRASE
 
 def handle_phrase(update, context):
     """Handle user's phrase input"""
     user_input = update.message.text.strip()
-    if user_input in italian_phrases:
-        update.message.reply_text(f"In Italian, '{user_input}' is: {italian_phrases[user_input]}")
-    else:
-        update.message.reply_text("Sorry, I don't have that phrase. Try one from the list!")
+    response = italian_phrases.get(user_input, "Sorry, I don't have that phrase. Try one from the list!")
+    update.message.reply_text(response)
     return PHRASE
 
 def quiz(update, context):
@@ -64,14 +66,14 @@ def quiz(update, context):
 def handle_quiz_answer(update, context):
     """Check quiz answer"""
     user_answer = update.message.text.strip().lower()
-    correct_answer = context.user_data['current_answer'].lower()
-    
+    correct_answer = context.user_data.get('current_answer', '').lower()
+
     if user_answer == correct_answer:
         update.message.reply_text("Correct! Ben fatto! 🎉 Want another? (yes/no)")
-        return ANSWER
     else:
         update.message.reply_text(f"Sorry, that's wrong. The correct answer is '{correct_answer}'. Try again? (yes/no)")
-        return ANSWER
+
+    return ANSWER
 
 def quiz_continue(update, context):
     """Handle quiz continuation"""
@@ -89,9 +91,6 @@ def cancel(update, context):
 
 def main():
     """Main function to run the bot"""
-    # Replace 'YOUR_TOKEN_HERE' with your actual Telegram Bot Token
-    TOKEN = 'YOUR_TOKEN_HERE'
-    
     updater = Updater(TOKEN, use_context=True)
     dp = updater.dispatcher
 
@@ -118,7 +117,4 @@ def main():
     updater.idle()
 
 if __name__ == '__main__':
-    def main():
-    TOKEN = os.getenv("TELEGRAM_TOKEN") or "YOUR_TOKEN_HERE"
-    print(f"Using Telegram token: {TOKEN}")  # Add this line
-    application = Application.builder().token(TOKEN).build()
+    main()
